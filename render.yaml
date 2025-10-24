@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: frozen-music-bot
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "bash start.sh"
+    envVars:
+      - key: API_ID
+        sync: false
+      - key: API_HASH
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: DB_URI
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: LOG_CHANNEL
+        sync: false
+      - key: ADMINS
+        sync: false
