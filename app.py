@@ -26,5 +26,24 @@ bot_thread.daemon = True
 bot_thread.start()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
+
+# 🌐 Flask App
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def home():
+    return "❤️ Lovely Bot is Live!"
+
+# Run Flask in background
+def run():
+    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
+threading.Thread(target=run).start()
+
+# 📁 Load conversation categories
+with open("conversation.json", "r", encoding="utf-8") as f:
+    categories = json.load(f)
+all_replies = sum(categories.values(), [])
