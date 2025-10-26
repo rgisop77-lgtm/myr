@@ -24,6 +24,8 @@ class Bot(Client):
         me = await self.get_me()
         self.username = '@' + me.username
         
+        link_changer.set_bot_client(self)
+        
         print('Bot Started Powered By @VJ_Botz')
         
         # Resume all active channels on startup
