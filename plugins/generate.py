@@ -42,10 +42,13 @@ async def get_user_input(client, user_id, prompt_text, timeout=600):
         await client.send_message(user_id, "⏱️ **Request timed out. Please try again.**")
         return None
 
-@Client.on_message(filters.private & ~filters.forwarded & filters.text & ~filters.command)
+@Client.on_message(filters.private & ~filters.forwarded & filters.text)
 async def capture_user_input(client, message):
     """Capture messages from users waiting for input - skip commands"""
     user_id = message.from_user.id
+    
+    if message.text.startswith('/'):
+        return
     
     # If this user is waiting for input, store the message and signal the event
     if user_id in pending_responses:
@@ -71,69 +74,5 @@ async def main(bot: Client, message: Message):
     phone_number_msg = await get_user_input(
         bot, 
         user_id, 
-        "<b>Please send your phone number which includes country code</b>\n<b>Example:</b> <code>+13124562345, +9171828181889</code>"
-    )
-    
-    if phone_number_msg is None:
-        return
-    
-    phone_number = phone_number_msg.text
-    
-    try:
-        sent_code = await bot.send_code(phone_number)
-    except PhoneNumberInvalid:
-        await bot.send_message(user_id, "**Invalid Phone Number**")
-        return
-    except Exception as e:
-        await bot.send_message(user_id, f"**Error:** {str(e)}")
-        return
-    
-    phone_code_msg = await get_user_input(
-        bot,
-        user_id,
-        "<b>Please send the OTP code you received</b>"
-    )
-    
-    if phone_code_msg is None:
-        return
-    
-    phone_code = phone_code_msg.text
-    
-    try:
-        signed_in = await bot.sign_in(phone_number, sent_code.phone_code_hash, phone_code)
-    except PhoneCodeInvalid:
-        await bot.send_message(user_id, "**Invalid OTP Code**")
-        return
-    except PhoneCodeExpired:
-        await bot.send_message(user_id, "**OTP Code Expired**")
-        return
-    except SessionPasswordNeeded:
-        password_msg = await get_user_input(
-            bot,
-            user_id,
-            "<b>Please send your 2FA password</b>"
-        )
-        
-        if password_msg is None:
-            return
-        
-        password = password_msg.text
-        
-        try:
-            signed_in = await bot.check_password(password)
-        except PasswordHashInvalid:
-            await bot.send_message(user_id, "**Invalid Password**")
-            return
-    except Exception as e:
-        await bot.send_message(user_id, f"**Error:** {str(e)}")
-        return
-    
-    session_string = await bot.export_session_string()
-    
-    if len(session_string) < SESSION_STRING_SIZE:
-        await bot.send_message(user_id, "**Session String is too short**")
-        return
-    
-    await db.set_session(user_id, session=session_string)
-    await bot.send_message(user_id, "**Login Successful** ✓")
+        "<b>Please send your phone number which includes country code</b>\n<b>Example:</b> <code>+13124562345, +9171828181889
     
