@@ -3,6 +3,7 @@
 # Ask Doubt on telegram @KingVJ01
 
 import traceback
+import asyncio
 from pyrogram.types import Message
 from pyrogram import Client, filters
 from asyncio.exceptions import TimeoutError
@@ -20,15 +21,36 @@ from plugins.database import db
 
 SESSION_STRING_SIZE = 351
 
+pending_responses = {}
+
 async def get_user_input(client, user_id, prompt_text, timeout=600):
-    """Wait for user input with a prompt message"""
+    """Wait for user input with a prompt message - works with all Pyrogram versions"""
     await client.send_message(user_id, prompt_text)
+    
+    # Create an event to signal when a message arrives
+    event = asyncio.Event()
+    pending_responses[user_id] = {"event": event, "message": None}
+    
     try:
-        response = await client.listen(user_id, timeout=timeout)
-        return response
-    except TimeoutError:
+        # Wait for the message with timeout
+        await asyncio.wait_for(event.wait(), timeout=timeout)
+        message = pending_responses[user_id]["message"]
+        del pending_responses[user_id]
+        return message
+    except asyncio.TimeoutError:
+        del pending_responses[user_id]
         await client.send_message(user_id, "⏱️ **Request timed out. Please try again.**")
         return None
+
+@Client.on_message(filters.private & ~filters.forwarded & filters.text)
+async def capture_user_input(client, message):
+    """Capture messages from users waiting for input"""
+    user_id = message.from_user.id
+    
+    # If this user is waiting for input, store the message and signal the event
+    if user_id in pending_responses:
+        pending_responses[user_id]["message"] = message
+        pending_responses[user_id]["event"].set()
 
 @Client.on_message(filters.private & ~filters.forwarded & filters.command(["logout"]))
 async def logout(client, message):
