@@ -74,5 +74,81 @@ async def main(bot: Client, message: Message):
     phone_number_msg = await get_user_input(
         bot, 
         user_id, 
-        "<b>Please send your phone number which includes country code</b>\n<b>Example:</b> <code>+13124562345, +9171828181889
+        "<b>Please send your phone number which includes country code</b>\n<b>Example:</b> <code>+13124562345, +9171828181889</code>"
+    )
     
+    if phone_number_msg is None:
+        return
+    
+    phone_number = phone_number_msg.text
+    
+    try:
+        async with Client(
+            name=str(user_id),
+            api_id=API_ID,
+            api_hash=API_HASH,
+            phone_number=phone_number,
+            in_memory=True
+        ) as app:
+            
+            # Request OTP
+            sent_code = await app.send_code(phone_number)
+            
+            # Get OTP from user
+            otp_msg = await get_user_input(
+                bot,
+                user_id,
+                "<b>Please send the OTP code you received</b>"
+            )
+            
+            if otp_msg is None:
+                return
+            
+            otp_code = otp_msg.text
+            
+            try:
+                # Sign in with OTP
+                await app.sign_in(phone_number, sent_code.phone_code_hash, otp_code)
+                
+            except SessionPasswordNeeded:
+                # 2FA is enabled, ask for password
+                password_msg = await get_user_input(
+                    bot,
+                    user_id,
+                    "<b>Your account has 2FA enabled. Please send your password</b>"
+                )
+                
+                if password_msg is None:
+                    return
+                
+                password = password_msg.text
+                
+                try:
+                    await app.check_password(password)
+                except PasswordHashInvalid:
+                    await bot.send_message(user_id, "❌ **Invalid password. Login failed.**")
+                    return
+            
+            # Get session string
+            session_string = await app.export_session_string()
+            
+            # Save to database
+            await db.set_session(user_id, session=session_string)
+            
+            await bot.send_message(
+                user_id,
+                f"✅ **Login Successful!**\n\n**Session String Length:** `{len(session_string)}`"
+            )
+            
+    except ApiIdInvalid:
+        await bot.send_message(user_id, "❌ **Invalid API ID or API Hash**")
+    except PhoneNumberInvalid:
+        await bot.send_message(user_id, "❌ **Invalid phone number format**")
+    except PhoneCodeInvalid:
+        await bot.send_message(user_id, "❌ **Invalid OTP code**")
+    except PhoneCodeExpired:
+        await bot.send_message(user_id, "❌ **OTP code expired. Please try again.**")
+    except Exception as e:
+        await bot.send_message(user_id, f"❌ **Error:** `{str(e)}`")
+        traceback.print_exc()
+        
