@@ -9,6 +9,11 @@ from plugins.database import db
 class LinkChanger:
     def __init__(self):
         self.active_tasks = {}
+        self.bot_client = None  # Store bot client for sending logs
+
+    def set_bot_client(self, client):
+        """Set the bot client for sending log messages"""
+        self.bot_client = client
 
     def generate_random_suffix(self):
         """Generate random 2 characters (letters or digits)"""
@@ -24,7 +29,7 @@ class LinkChanger:
             
             # Generate new username
             new_suffix = self.generate_random_suffix()
-            new_username = f"{base_username}{new_suffix}"
+            new_username = f"{base_username}_{new_suffix}"
             
             # Try to set the new username
             max_attempts = 5
@@ -33,25 +38,49 @@ class LinkChanger:
                     await client.set_chat_username(channel_id, new_username)
                     await client.disconnect()
                     await db.update_last_changed(channel_id, time.time())
-                    return True, new_username
+                    return True, new_username, None
                 except Exception as e:
                     if "USERNAME_OCCUPIED" in str(e) or "occupied" in str(e).lower():
                         # Username taken, try another
                         new_suffix = self.generate_random_suffix()
-                        new_username = f"{base_username}{new_suffix}"
+                        new_username = f"{base_username}_{new_suffix}"
                         continue
                     else:
                         await client.disconnect()
-                        return False, str(e)
+                        return False, None, str(e)
             
             await client.disconnect()
-            return False, "Could not find available username after 5 attempts"
+            return False, None, "Could not find available username after 5 attempts"
         except Exception as e:
-            return False, str(e)
+            return False, None, str(e)
+
+    async def send_log_message(self, user_id, channel_id, new_username=None, error=None, interval=None):
+        """Send log message to LOG_CHANNEL"""
+        if not self.bot_client:
+            return
+        
+        try:
+            from config import LOG_CHANNEL
+            
+            if error:
+                # Error log
+                log_text = f"""⚠️ <b>Error changing link for channel:</b> <code>{channel_id}</code>
+<b>User ID:</b> <code>{user_id}</code>
+<b>Reason:</b> {error}"""
+            else:
+                # Success log
+                log_text = f"""🔄 <b>Link changed for channel:</b> <code>{channel_id}</code>
+<b>New username:</b> @{new_username}
+<b>User ID:</b> <code>{user_id}</code>
+<b>Interval:</b> {interval}s"""
+            
+            await self.bot_client.send_message(LOG_CHANNEL, log_text)
+        except Exception as e:
+            print(f"[v0] Failed to send log message: {e}")
 
     async def start_channel_rotation(self, user_id, channel_id, base_username, interval):
         """Start automatic link rotation for a channel"""
-        task_key = f"{user_id}_{channel_id}"
+        task_key = (user_id, channel_id)  # Use tuple instead of string for better key management
         
         if task_key in self.active_tasks:
             return False, "Channel rotation already active"
@@ -64,16 +93,19 @@ class LinkChanger:
             async def rotation_loop():
                 while True:
                     try:
-                        success, result = await self.change_channel_link(user_session, channel_id, base_username)
+                        success, new_username, error = await self.change_channel_link(user_session, channel_id, base_username)
                         if success:
-                            print(f"[v0] Link changed for channel {channel_id}: {result}")
+                            print(f"[v0] Link changed for channel {channel_id}: {new_username}")
+                            await self.send_log_message(user_id, channel_id, new_username=new_username, interval=interval)
                         else:
-                            print(f"[v0] Failed to change link for channel {channel_id}: {result}")
+                            print(f"[v0] Failed to change link for channel {channel_id}: {error}")
+                            await self.send_log_message(user_id, channel_id, error=error)
                         await asyncio.sleep(interval)
                     except asyncio.CancelledError:
                         break
                     except Exception as e:
                         print(f"[v0] Error in rotation loop: {e}")
+                        await self.send_log_message(user_id, channel_id, error=f"Unexpected error: {str(e)}")
                         await asyncio.sleep(interval)
             
             task = asyncio.create_task(rotation_loop())
@@ -84,7 +116,7 @@ class LinkChanger:
 
     async def stop_channel_rotation(self, user_id, channel_id):
         """Stop automatic link rotation for a channel"""
-        task_key = f"{user_id}_{channel_id}"
+        task_key = (user_id, channel_id)  # Use tuple instead of string
         
         if task_key not in self.active_tasks:
             return False, "Channel rotation not active"
@@ -105,3 +137,4 @@ class LinkChanger:
         return await db.get_user_channels(user_id)
 
 link_changer = LinkChanger()
+
